@@ -18,7 +18,7 @@ let gfx = String.make (64 * 32) '\000'
 let delay_timer = ref 0
 let sound_timer = ref 0
 
-let stack = ref []
+let stack : int list ref = ref []
 
 let key = String.make 16 '\000'
 
@@ -56,7 +56,6 @@ let initialized () =
 
   pc := 0x200 ;
   i := 0 ;
-  sp := 0 ;
 
   clear memory ;
   clear reg ;

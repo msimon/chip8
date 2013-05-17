@@ -3,7 +3,7 @@
 let rec game_loop () =
   Chip8.emulate_cycle () ;
 
-  if !Chip8.draw_flag () then ();
+  if Chip8.draw_flag () then ();
   (* draw graphics *)
 
   Chip8.set_keys () ;

@@ -9,3 +9,5 @@
 *.cmxa
 .#*
 ~#
+games
+_build
