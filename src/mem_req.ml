@@ -1,3 +1,7 @@
+let gfx_width = 64
+let gfx_height = 32
+let sprite_width = 8
+
 (* 0x000-0x1FF - Chip 8 interpreter (contains font set in emu) *)
 (* 0x050-0x0A0 - Used for the built in 4x5 pixel font set (0-F) *)
 (* 0x200-0xFFF - Program ROM and work RAM *)
@@ -12,7 +16,9 @@ let i = ref 0
 (* program counter *)
 let pc = ref 0
 
-let gfx = String.make (64 * 32) '\000'
+(* let gfx = String.make (gfx_width * gfx_height) '\000' *)
+
+let gfx = Array.make_matrix gfx_height gfx_width 0
 
 (* Some timer *)
 let delay_timer = ref 0
@@ -53,6 +59,17 @@ let initialized () =
   let clear s =
     String.fill s 0 (String.length s) '\000'
   in
+  let clear_matrix m =
+    let leny = Array.length m in
+    let lenx = Array.length m.(0) in
+    let rec clear n =
+      Array.fill m.(n) 0 (lenx - 1) 0 ;
+      if n = leny - 1 then ()
+      else clear (n + 1)
+    in
+
+    clear 0
+  in
 
   pc := 0x200 ;
   i := 0 ;
@@ -60,7 +77,7 @@ let initialized () =
   clear memory ;
   clear reg ;
   clear key ;
-  clear gfx ;
+  clear_matrix gfx ;
 
   stack := [];
 
@@ -70,4 +87,6 @@ let initialized () =
   Array.iteri (
     fun i c ->
       String.set memory i (char_of_int c)
-  ) chip8_fontset
+  ) chip8_fontset;
+
+  Random.self_init ()

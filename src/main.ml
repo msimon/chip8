@@ -20,3 +20,12 @@ let _ =
   Chip8.load_game game ;
 
   game_loop ()
+
+
+(* first_bits = 6 | opcode = 6A02 *)
+(* first_bits = 6 | opcode = 6B0C *)
+(* first_bits = 6 | opcode = 6C3F *)
+(* first_bits = 6 | opcode = 6D0C *)
+(* first_bits = A | opcode = A2EA *)
+(* first_bits = D | opcode = DAB6 *)
+(* Draw a sprite at x = 2 y = 12 *)

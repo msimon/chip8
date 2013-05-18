@@ -5,6 +5,10 @@ exception Empty_stack of int
 
 let draw_flag = ref false
 
+let gfx_width = 64
+let gfx_height = 32
+let sprite_width = 8
+
 let load_game game =
   M.initialized () ;
 
@@ -39,7 +43,7 @@ let emulate_cycle () =
   let decode opcode =
     let first_bits = Byte.get_bits 4 opcode in
 
-    Printf.printf "first_bits = %X | opcode = %X \n%!" first_bits opcode ;
+    (* Printf.printf "first_bits = %X | opcode = %X \n%!" first_bits opcode ; *)
 
     match first_bits with
       | 0 ->
@@ -119,7 +123,7 @@ let emulate_cycle () =
             if x > (0xFF - y) then M.reg.[0xF] <- '\001'
             else M.reg.[0xF] <- '\000';
 
-           M.reg.[vx] <- char_of_int ((x + y) land 0xFF)
+            M.reg.[vx] <- char_of_int ((x + y) land 0xFF)
 
           | 5 -> (* 8XY5:	VY is subtracted from VX. VF is set to 0 when there's a borrow, and 1 when there isn't *)
             if x < y then M.reg.[0xF] <- '\000'
@@ -167,16 +171,61 @@ let emulate_cycle () =
         let n = Byte.get_bits ~len:2 2 opcode in
         let r = Random.int 256 in
 
-        M.reg.[vx] <- char_of_int ((n + r) land 0xFF);
+        M.reg.[vx] <- char_of_int (r land n);
         incr_pc ()
 
-      (* TODO *)
       | 0xd -> (* DXYN: Draws a sprite at coordinate (VX, VY) that has a width of 8 pixels and a height of N pixels.
                   Each row of 8 pixels is read as bit-coded (with the most significant bit of each byte displayed on the left) starting from memory location I;
                   I value doesn't change after the execution of this instruction.
                   As described above, VF is set to 1 if any screen pixels are flipped from set to unset when the sprite is drawn, and to 0 if that doesn't happen.
                *)
-        Printf.printf "Draw a sprite\n%!" ;
+
+        let vx = Byte.get_bits 3 opcode in
+        let vy = Byte.get_bits 2 opcode in
+        (* here n represent the height *)
+        let height = Byte.get_bits 1 opcode in
+
+        let x = int_of_char M.reg.[vx] in
+        let y = int_of_char M.reg.[vy] in
+
+        (* Printf.printf "Draw a sprite at x = %d from vx = %d |  y = %d from vy = %d\n%!" x vx y vy; *)
+        let rec fill_gfx_height h_pos =
+          let rec fill_gfx_width pixel w_pos =
+            (* we scan bit by bit, to check if a gfx pixel should be modify or not *)
+            if pixel land (0b1 lsl (M.sprite_width - 1 - w_pos)) > 0 then begin
+              if M.gfx.(y + h_pos).(x + w_pos) = 1 then begin
+                M.reg.[0xf] <- '\001';
+                M.gfx.(y + h_pos).(x + w_pos) <- 0 ;
+              end else begin
+                M.reg.[0xf] <- '\000';
+                M.gfx.(y + h_pos).(x + w_pos) <- 1 ;
+              end
+            end;
+
+            if w_pos = M.sprite_width - 1 then ()
+            else fill_gfx_width pixel (w_pos + 1)
+          in
+
+          let pixel = int_of_char M.memory.[!M.i + h_pos] in
+          fill_gfx_width pixel 0 ;
+
+          if h_pos = height - 1 then ()
+          else fill_gfx_height (h_pos + 1)
+        in
+
+        fill_gfx_height 0 ;
+
+        (* Array.iter ( *)
+        (*   fun el -> *)
+        (*     Array.iter ( *)
+        (*       fun el -> *)
+        (*         Printf.printf "%d" el *)
+        (*     ) el; *)
+        (*     Printf.printf "\n" *)
+        (* ) M.gfx ; *)
+
+        (* Printf.printf "\n ------------------------------------ \n\n%!" ; *)
+
         incr_pc ()
 
       (* TODO *)
@@ -213,17 +262,24 @@ let emulate_cycle () =
             if i > 0xFFF then M.reg.[0xf] <- '\001'
             else M.reg.[0xf] <- '\000'
 
-          (* TODO *)
           | 0x29 -> (* FX29: Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font *)
-            ()
+            let x = int_of_char M.reg.[vx] in
+            M.i := x * 5
 
-          (* TODO *)
           | 0x33 -> (* FX33: Stores the Binary-coded decimal representation of VX, with the most significant of three digits at the address in I,
                        the middle digit at I plus 1, and the least significant digit at I plus 2.
                        (In other words, take the decimal representation of VX, place the hundreds digit in memory at location in I,
                        the tens digit at location I+1,and the ones digit at location I+2.)
                     *)
-            ()
+            let x = int_of_char M.reg.[vx] in
+
+            let n1 = x / 100 in
+            let n2 = (x mod 100) / 10 in
+            let n3 = x mod 10 in
+
+            M.memory.[!M.i] <- char_of_int n1 ;
+            M.memory.[!M.i + 1] <- char_of_int n2 ;
+            M.memory.[!M.i + 2] <- char_of_int n3
 
           | 0x55 -> (* FX55: Stores V0 to VX in memory starting at address I *)
             let rec fill i n =
@@ -255,9 +311,7 @@ let emulate_cycle () =
   decode (fetch_opcode ()) ;
 
   if !M.delay_timer > 0 then decr(M.delay_timer);
-  if !M.sound_timer > 0 then decr(M.sound_timer);
-
-  Random.self_init ()
+  if !M.sound_timer > 0 then decr(M.sound_timer)
 
 
 let set_keys () =
