@@ -1,5 +1,3 @@
-
-
 let rec game_loop () =
   Chip8.emulate_cycle () ;
 
@@ -9,7 +7,6 @@ let rec game_loop () =
   Key.check ();
 
   game_loop ()
-
 
 let _ =
   let game =

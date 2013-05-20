@@ -7,16 +7,14 @@ let sprite_width = 8
 (* 0x200-0xFFF - Program ROM and work RAM *)
 
 (* total memory *)
-let memory = String.make 4096 '\000'
+let memory = Array.make 4096 0
 (* register *)
-let reg = String.make 16 '\000'
+let reg = Array.make 16 0
 
 (* index register *)
 let i = ref 0
 (* program counter *)
 let pc = ref 0
-
-(* let gfx = String.make (gfx_width * gfx_height) '\000' *)
 
 let gfx = Array.make_matrix gfx_height gfx_width 0
 
@@ -70,19 +68,15 @@ let clear_screen () =
   clear_matrix gfx
 
 let initialized () =
-  let clear s =
-    String.fill s 0 (String.length s) '\000'
-  in
   let clear_array a =
     Array.fill a 0 ((Array.length a) - 1) 0 ;
   in
 
-
   pc := 0x200 ;
   i := 0 ;
 
-  clear memory ;
-  clear reg ;
+  clear_array memory ;
+  clear_array reg ;
   clear_array key ;
   clear_screen ();
 
@@ -93,7 +87,7 @@ let initialized () =
 
   Array.iteri (
     fun i c ->
-      String.set memory i (char_of_int c)
+      memory.(i) <- c
   ) chip8_fontset;
 
   Random.self_init ()

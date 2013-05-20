@@ -13,8 +13,6 @@ let init () =
 
 
 let display () =
-  (* Printf.printf "display!\n%!"; *)
-
   let screen =
     match !screen with
       | Some s -> s
