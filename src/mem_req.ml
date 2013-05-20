@@ -26,7 +26,7 @@ let sound_timer = ref 0
 
 let stack : int list ref = ref []
 
-let key = String.make 16 '\000'
+let key = Array.make 16 0
 
 (* only the first 4 byte are used *)
 let chip8_fontset =
@@ -54,11 +54,7 @@ let chip8_fontset =
    program counter start at 0x200
    reset other value
 *)
-
-let initialized () =
-  let clear s =
-    String.fill s 0 (String.length s) '\000'
-  in
+let clear_screen () =
   let clear_matrix m =
     let leny = Array.length m in
     let lenx = Array.length m.(0) in
@@ -71,13 +67,24 @@ let initialized () =
     clear 0
   in
 
+  clear_matrix gfx
+
+let initialized () =
+  let clear s =
+    String.fill s 0 (String.length s) '\000'
+  in
+  let clear_array a =
+    Array.fill a 0 ((Array.length a) - 1) 0 ;
+  in
+
+
   pc := 0x200 ;
   i := 0 ;
 
   clear memory ;
   clear reg ;
-  clear key ;
-  clear_matrix gfx ;
+  clear_array key ;
+  clear_screen ();
 
   stack := [];
 

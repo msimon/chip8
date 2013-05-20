@@ -3,7 +3,7 @@ module M = Mem_req
 exception Unknow_opcode of int
 exception Empty_stack of int
 
-let draw_flag = ref false
+let draw_cnt = ref 0
 
 let gfx_width = 64
 let gfx_height = 32
@@ -11,6 +11,7 @@ let sprite_width = 8
 
 let load_game game =
   M.initialized () ;
+  Display.init () ;
 
   let in_chan =
     try open_in game
@@ -27,7 +28,6 @@ let load_game game =
 
   load 0x200
 
-
 let emulate_cycle () =
   let fetch_opcode () =
     let fc = (int_of_char M.memory.[!M.pc]) lsl 8 in
@@ -43,13 +43,16 @@ let emulate_cycle () =
   let decode opcode =
     let first_bits = Byte.get_bits 4 opcode in
 
-    (* Printf.printf "first_bits = %X | opcode = %X \n%!" first_bits opcode ; *)
+    (* Printf.printf "f: %X | opcode: %X\n%!" first_bits opcode ; *)
 
     match first_bits with
       | 0 ->
         let last_bits = Byte.get_bits ~len:2 2 opcode in
-        if last_bits = 0xe0 then (* 00E0: clear the screen *) ()
-        else if last_bits = 0xee then begin (* 00EE: Returns from a subroutine *)
+        if last_bits = 0xe0 then begin (* 00E0: clear the screen *)
+          M.clear_screen ();
+          incr(draw_cnt) ;
+          incr_pc ();
+        end else if last_bits = 0xee then begin (* 00EE: Returns from a subroutine *)
           match !M.stack with
             | [] -> raise (Empty_stack opcode)
             | pc::stack ->
@@ -193,13 +196,14 @@ let emulate_cycle () =
           let rec fill_gfx_width pixel w_pos =
             (* we scan bit by bit, to check if a gfx pixel should be modify or not *)
             if pixel land (0b1 lsl (M.sprite_width - 1 - w_pos)) > 0 then begin
-              if M.gfx.(y + h_pos).(x + w_pos) = 1 then begin
+              let y_ = (y + h_pos) mod M.gfx_height in
+              let x_ = (x + w_pos) mod M.gfx_width in
+
+              if M.gfx.(y_).(x_) = 1 then begin
                 M.reg.[0xf] <- '\001';
-                M.gfx.(y + h_pos).(x + w_pos) <- 0 ;
-              end else begin
-                M.reg.[0xf] <- '\000';
-                M.gfx.(y + h_pos).(x + w_pos) <- 1 ;
-              end
+                M.gfx.(y_).(x_) <- 0 ;
+              end else
+                M.gfx.(y_).(x_) <- 1 ;
             end;
 
             if w_pos = M.sprite_width - 1 then ()
@@ -213,8 +217,14 @@ let emulate_cycle () =
           else fill_gfx_height (h_pos + 1)
         in
 
-        fill_gfx_height 0 ;
-
+        (* Printf.printf "x = %d | y = %d\n%!" x y; *)
+        M.reg.[0xf] <- '\000';
+        begin try
+          fill_gfx_height 0 ;
+        with _ ->
+          Printf.printf "End: x = %d | y = %d | h + %d\n%!" x y height;
+          exit 0
+        end;
         (* Array.iter ( *)
         (*   fun el -> *)
         (*     Array.iter ( *)
@@ -226,16 +236,19 @@ let emulate_cycle () =
 
         (* Printf.printf "\n ------------------------------------ \n\n%!" ; *)
 
+        incr(draw_cnt);
         incr_pc ()
 
-      (* TODO *)
       | 0xe -> (* EX9E *)
-        let _vx = Byte.get_bits 3 opcode in
+        let vx = Byte.get_bits 3 opcode in
+        let x = int_of_char M.reg.[vx] in
         let opcode_res = Byte.get_bits ~len:2 2 opcode in
         if opcode_res = 0x9E then begin (* EX9E: Skips the next instruction if the key stored in VX is pressed *)
-          incr_pc ()
+          let skip = (M.key.(x) = 1) in
+          incr_pc ~skip ()
         end else if opcode_res = 0xA1 then begin (* EXA1: Skips the next instruction if the key stored in VX isn't pressed *)
-          incr_pc ()
+          let skip = (M.key.(x) = 0) in
+          incr_pc ~skip ()
         end else
           raise (Unknow_opcode opcode)
 
@@ -243,79 +256,96 @@ let emulate_cycle () =
         let vx = Byte.get_bits 3 opcode in
         let opcode_res = Byte.get_bits ~len:2 2 opcode in
 
-        begin match opcode_res with
-          | 0x07 -> (* FX07: Sets VX to the value of the delay timer *)
-            M.reg.[vx] <- char_of_int !M.delay_timer
+        (* FX0A: A key press is awaited, and then stored in VX *)
+        (* we check every single key to check if any is press *)
+        (* if not we don't increment pc and try again *)
+        if opcode_res = 0x0A then begin
+          let k_len = Array.length M.key in
+          let rec check i =
+            if M.key.(i) = 1 then incr_pc ()
+            else begin
+              if i = k_len - 1 then ()
+              else check (i + 1)
+            end
+          in
+          check 0
+        end else begin
+          incr_pc ();
+          match opcode_res with
+            | 0x07 -> (* FX07: Sets VX to the value of the delay timer *)
+              M.reg.[vx] <- char_of_int !M.delay_timer
 
-          | 0x0A -> (* FX0A: A key press is awaited, and then stored in VX *)
-            ()
+            (* (\* TODO *\) *)
+            (* | 0x0A -> (\* FX0A: A key press is awaited, and then stored in VX *\) *)
+            (*   () *)
 
-          | 0x15 -> (* FX15: Sets the delay timer to VX *)
-            M.delay_timer := int_of_char M.reg.[vx]
+            | 0x15 -> (* FX15: Sets the delay timer to VX *)
+              M.delay_timer := int_of_char M.reg.[vx]
 
-          | 0x18 -> (* FX18: Sets the sound timer to VX *)
-            M.sound_timer := int_of_char M.reg.[vx]
+            | 0x18 -> (* FX18: Sets the sound timer to VX *)
+              M.sound_timer := int_of_char M.reg.[vx]
 
-          | 0x1E -> (* FX1E: Adds VX to I *)
-            let i = !M.i + (int_of_char M.reg.[vx]) in
-            M.i := i land 0xFFF;
-            if i > 0xFFF then M.reg.[0xf] <- '\001'
-            else M.reg.[0xf] <- '\000'
+            | 0x1E -> (* FX1E: Adds VX to I *)
+              let i = !M.i + (int_of_char M.reg.[vx]) in
+              M.i := i land 0xFFF;
+              if i > 0xFFF then M.reg.[0xf] <- '\001'
+              else M.reg.[0xf] <- '\000'
 
-          | 0x29 -> (* FX29: Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font *)
-            let x = int_of_char M.reg.[vx] in
-            M.i := x * 5
+            | 0x29 -> (* FX29: Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font *)
+              let x = int_of_char M.reg.[vx] in
+              M.i := x * 5
 
-          | 0x33 -> (* FX33: Stores the Binary-coded decimal representation of VX, with the most significant of three digits at the address in I,
-                       the middle digit at I plus 1, and the least significant digit at I plus 2.
-                       (In other words, take the decimal representation of VX, place the hundreds digit in memory at location in I,
-                       the tens digit at location I+1,and the ones digit at location I+2.)
-                    *)
-            let x = int_of_char M.reg.[vx] in
+            | 0x33 -> (* FX33: Stores the Binary-coded decimal representation of VX, with the most significant of three digits at the address in I,
+                         the middle digit at I plus 1, and the least significant digit at I plus 2.
+                         (In other words, take the decimal representation of VX, place the hundreds digit in memory at location in I,
+                         the tens digit at location I+1,and the ones digit at location I+2.)
+                      *)
+              let x = int_of_char M.reg.[vx] in
 
-            let n1 = x / 100 in
-            let n2 = (x mod 100) / 10 in
-            let n3 = x mod 10 in
+              let n1 = x / 100 in
+              let n2 = (x mod 100) / 10 in
+              let n3 = x mod 10 in
 
-            M.memory.[!M.i] <- char_of_int n1 ;
-            M.memory.[!M.i + 1] <- char_of_int n2 ;
-            M.memory.[!M.i + 2] <- char_of_int n3
+              M.memory.[!M.i] <- char_of_int n1 ;
+              M.memory.[!M.i + 1] <- char_of_int n2 ;
+              M.memory.[!M.i + 2] <- char_of_int n3
 
-          | 0x55 -> (* FX55: Stores V0 to VX in memory starting at address I *)
-            let rec fill i n =
-              M.memory.[i] <- M.reg.[n];
-              if n >= vx then ()
-              else
-                fill (i + 1) (n + 1)
-            in
+            | 0x55 -> (* FX55: Stores V0 to VX in memory starting at address I *)
+              let rec fill i n =
+                M.memory.[i] <- M.reg.[n];
+                if n >= vx then ()
+                else
+                  fill (i + 1) (n + 1)
+              in
 
-            fill !M.i 0
+              fill !M.i 0
 
-          | 0x65 -> (* FX65: Fills V0 to VX with values from memory starting at address I *)
-            let rec fill i n =
-              M.reg.[n] <- M.memory.[i];
-              if n >= vx then ()
-              else
-                fill (i + 1) (n + 1)
-            in
+            | 0x65 -> (* FX65: Fills V0 to VX with values from memory starting at address I *)
+              let rec fill i n =
+                M.reg.[n] <- M.memory.[i];
+                if n >= vx then ()
+                else
+                  fill (i + 1) (n + 1)
+              in
 
-            fill !M.i 0;
+              fill !M.i 0;
 
-          | _ -> raise (Unknow_opcode opcode)
-        end;
-        incr_pc ()
+            | _ -> raise (Unknow_opcode opcode)
+        end
 
       | _ -> raise (Unknow_opcode opcode)
   in
 
   decode (fetch_opcode ()) ;
 
-  if !M.delay_timer > 0 then decr(M.delay_timer);
+  if !M.delay_timer > 0 then begin
+    M.delay_timer := !M.delay_timer / 50
+  end;
   if !M.sound_timer > 0 then decr(M.sound_timer)
 
-
-let set_keys () =
-  ()
-
 let draw_flag () =
-  !draw_flag
+  (* Printf.printf "draw_cnt is %d\n" !draw_cnt; *)
+  if !draw_cnt >= 1 then begin
+    draw_cnt := 0;
+    true
+  end else false
