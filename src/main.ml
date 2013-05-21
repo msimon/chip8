@@ -1,10 +1,10 @@
 open Lwt
 
 let t = ref (Unix.gettimeofday ())
-let interval = 0.01 (* 60 Hz *)
+let interval = 1. /. 840. (* 840 instruction / sec *)
 
 let rec game_loop () =
-  let op = Chip8.emulate_cycle () in
+  let _ = Chip8.emulate_cycle () in
 
   if Chip8.draw_flag () then
     Display.display ();
@@ -14,14 +14,10 @@ let rec game_loop () =
   let d = t' -. !t in
   t:=t';
   if d > interval
-  then (
-    Printf.printf "too late (%f) -> opcode %X\n" d op;
+  then
     game_loop ()
-  )
   else
-    let s = (interval -. d ) in
-    (* Printf.printf "sleep %f\r                           " s; *)
-    Lwt_unix.sleep s >>=
+    Lwt_unix.sleep (interval -. d) >>=
     game_loop
 
 let _ =

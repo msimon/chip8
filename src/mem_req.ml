@@ -67,11 +67,10 @@ let clear_screen () =
 
   clear_matrix gfx
 
-let initialized () =
-  let clear_array a =
-    Array.fill a 0 ((Array.length a) - 1) 0 ;
-  in
+let clear_array a =
+  Array.fill a 0 ((Array.length a) - 1) 0
 
+let initialized () =
   pc := 0x200 ;
   i := 0 ;
 

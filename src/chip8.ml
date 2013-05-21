@@ -2,12 +2,19 @@ module M = Mem_req
 
 exception Unknow_opcode of int
 exception Empty_stack of int
+exception Game_not_found of string
 
 let draw_cnt = ref 0
 
 let gfx_width = 64
 let gfx_height = 32
 let sprite_width = 8
+
+let key_wait_reset = ref false
+
+let t = ref (Unix.gettimeofday ())
+let frequence = 1. /. 60. (* 60 Hz *)
+
 
 let load_game game =
   M.initialized () ;
@@ -16,7 +23,7 @@ let load_game game =
   let in_chan =
     try open_in game
     with Sys_error _ ->
-      failwith (Printf.sprintf "Couldn't find game %s" game)
+      raise (Game_not_found game)
   in
 
   let rec load i =
@@ -38,6 +45,17 @@ let emulate_cycle () =
   let incr_pc ?(skip=false) () =
     if skip then M.pc := !M.pc + 4
     else M.pc := !M.pc + 2
+  in
+
+  (* decrement timer on 60hz *)
+  let decr_timer () =
+    let t' = Unix.gettimeofday () in
+    let d = t' -. !t in
+    if d >= frequence then begin
+      t:=t';
+      if !M.delay_timer > 0 then decr(M.delay_timer);
+      if !M.sound_timer > 0 then decr(M.sound_timer);
+    end else ()
   in
 
   let decode opcode =
@@ -70,6 +88,7 @@ let emulate_cycle () =
       | 3 -> (* 3XNN: Skips the next instruction if VX equals NN *)
         let vx = Byte.get_bits 3 opcode in
         let n = Byte.get_bits ~len:2 2 opcode in
+
         if M.reg.(vx) = n then incr_pc ~skip:true ()
         else incr_pc ()
 
@@ -209,7 +228,7 @@ let emulate_cycle () =
           let pixel = M.memory.(!M.i + h_pos) in
           fill_gfx_width pixel 0 ;
 
-          if h_pos = height - 1 then ()
+          if h_pos = height - 1 || h_pos + 1 + y >= M.gfx_height then ()
           else fill_gfx_height (h_pos + 1)
         in
 
@@ -237,18 +256,28 @@ let emulate_cycle () =
         let opcode_res = Byte.get_bits ~len:2 2 opcode in
 
         (* FX0A: A key press is awaited, and then stored in VX *)
+        (* we first unset all key, before waiting *)
         (* we check every single key to check if any is press *)
         (* if not we don't increment pc and try again *)
+
         if opcode_res = 0x0A then begin
-          let k_len = Array.length M.key in
-          let rec check i =
-            if M.key.(i) = 1 then incr_pc ()
-            else begin
-              if i = k_len - 1 then ()
-              else check (i + 1)
-            end
-          in
-          check 0
+          if not !key_wait_reset then begin
+            M.clear_array M.key;
+            key_wait_reset := true
+          end else begin
+            let k_len = Array.length M.key in
+            let rec check i =
+              if M.key.(i) = 1 then begin
+                M.reg.(vx) <- i;
+                key_wait_reset := false ;
+                incr_pc ()
+              end else begin
+                if i = k_len - 1 then ()
+                else check (i + 1)
+              end
+            in
+            check 0
+          end
         end else begin
           incr_pc ();
           match opcode_res with
@@ -311,12 +340,10 @@ let emulate_cycle () =
 
       | _ -> raise (Unknow_opcode opcode)
   in
-  let opcode = fetch_opcode () in
-  decode opcode;
+  decode (fetch_opcode ());
 
-  if !M.delay_timer > 0 then decr(M.delay_timer);
-  if !M.sound_timer > 0 then decr(M.sound_timer);
-  opcode
+  decr_timer ()
+
 
 let draw_flag () =
   if !draw_cnt >= 1 then begin
