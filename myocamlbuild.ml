@@ -6,8 +6,8 @@ let _ =
     | After_rules ->
       begin
         try
-          match Ocamlbuild_pack.My_unix.run_and_read "uname -s" with
-            | "Darwin" -> flag ["ocaml"; "use_cocoa_framework"] (S[A "-cclib";A "-framework Cocoa"])
+          match String.lowercase (String.trim (Ocamlbuild_pack.My_unix.run_and_read "uname -s")) with
+            | "darwin" -> flag ["ocaml"; "use_cocoa_framework"] (S[A "-cclib";A "-framework Cocoa"])
             | _ -> ()
         with _ ->
           Printf.eprintf "Cannot find OS type"
