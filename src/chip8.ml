@@ -311,11 +311,12 @@ let emulate_cycle () =
 
       | _ -> raise (Unknow_opcode opcode)
   in
-
-  decode (fetch_opcode ()) ;
+  let opcode = fetch_opcode () in
+  decode opcode;
 
   if !M.delay_timer > 0 then decr(M.delay_timer);
-  if !M.sound_timer > 0 then decr(M.sound_timer)
+  if !M.sound_timer > 0 then decr(M.sound_timer);
+  opcode
 
 let draw_flag () =
   if !draw_cnt >= 1 then begin
