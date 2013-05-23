@@ -12,9 +12,10 @@ let sprite_width = 8
 
 let key_wait_reset = ref false
 
-let t = ref (Unix.gettimeofday ())
-let frequence = 1. /. 60. (* 60 Hz *)
-
+let timer_t = ref 0.
+let timer_late = ref 0.
+(* decrement timer on 60hz *)
+let frequence = 1. /. 60.
 
 let load_game game =
   M.initialized () ;
@@ -50,12 +51,15 @@ let emulate_cycle () =
   (* decrement timer on 60hz *)
   let decr_timer () =
     let t' = Unix.gettimeofday () in
-    let d = t' -. !t in
-    if d >= frequence then begin
-      t:=t';
+    let d = t' -. !timer_t +. !timer_late in
+    timer_t:=t';
+    if d < frequence then begin
+      timer_late := d ;
+    end else begin
+      timer_late := d -. frequence ;
       if !M.delay_timer > 0 then decr(M.delay_timer);
       if !M.sound_timer > 0 then decr(M.sound_timer);
-    end else ()
+    end
   in
 
   let decode opcode =
